@@ -1,0 +1,16 @@
+appId: com.alexm.winnipegcanvass
+productName: Winnipeg Canvass
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+win:
+  target:
+    - portable

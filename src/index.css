@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Leaflet container needs explicit height */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #e8e8e8;
+}
+
+/* Hide Geoman text in toolbar buttons (we use our own toolbar) */
+.leaflet-pm-toolbar { display: none !important; }
+
+/* Crosshair for pin-drop mode */
+.leaflet-container.pin-drop-cursor {
+  cursor: crosshair !important;
+}
+
+/* Attention-grabbing prompt that appears after a region is drawn,
+   reminding the user to place its pin. */
+@keyframes pin-prompt-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes pin-prompt-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(3px); }
+}
+.pin-prompt {
+  animation: pin-prompt-in 180ms ease-out;
+}
+.pin-prompt-icon {
+  animation: pin-prompt-bob 1.1s ease-in-out infinite;
+}
+
+/* Polish scrollbars in sidebar */
+.thin-scroll::-webkit-scrollbar { width: 8px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+.thin-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }

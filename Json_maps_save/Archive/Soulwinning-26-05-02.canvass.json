@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "name": "Soulwinning-26-05-02",
+  "createdAt": 1777762826588,
+  "updatedAt": 1777766149710,
+  "mapCenter": {
+    "lat": 49.90093724046023,
+    "lng": -97.16428756713869
+  },
+  "mapZoom": 12,
+  "regions": [
+    {
+      "id": "d057e2e9-de68-4524-9d25-055c97aeb37a",
+      "polygon": [
+        {
+          "lat": 49.92761845176705,
+          "lng": -97.12435483932497
+        },
+        {
+          "lat": 49.928640638465176,
+          "lng": -97.12733745574951
+        },
+        {
+          "lat": 49.92927604089205,
+          "lng": -97.12692975997926
+        },
+        {
+          "lat": 49.92832293411052,
+          "lng": -97.1238398551941
+        }
+      ],
+      "pin": {
+        "lat": 49.92869589118265,
+        "lng": -97.12562084197998
+      },
+      "address": "240, Lansdowne Avenue, St. John’s, West Kildonan, Mynarski, Winnipeg, Manitoba, R2W 3V7, Canada",
+      "addressShort": "240 Lansdowne Avenue",
+      "color": "#4E79A7",
+      "colorLocked": false,
+      "status": "pending",
+      "selectedForPdf": true,
+      "createdAt": 1777762857367,
+      "updatedAt": 1777764310756
+    },
+    {
+      "id": "2e834939-b0d8-4e79-b02d-c5d5b89b4cd9",
+      "polygon": [
+        {
+          "lat": 49.92832293411052,
+          "lng": -97.1238398551941
+        },
+        {
+          "lat": 49.92927604089205,
+          "lng": -97.12692975997926
+        },
+        {
+          "lat": 49.92981474508369,
+          "lng": -97.126522064209
+        },
+        {
+          "lat": 49.928889275195004,
+          "lng": -97.12358236312866
+        }
+      ],
+      "pin": {
+        "lat": 49.92906193883611,
+        "lng": -97.1246659755707
+      },
+      "address": "225, Lansdowne Avenue, St. John’s, West Kildonan, Mynarski, Winnipeg, Manitoba, R2W 3V7, Canada",
+      "addressShort": "225 Lansdowne Avenue",
+      "color": "#F28E2B",
+      "colorLocked": false,
+      "status": "pending",
+      "selectedForPdf": true,
+      "createdAt": 1777762881943,
+      "updatedAt": 1777764321371
+    },
+    {
+      "id": "ff46386a-8b87-41fc-8988-88ebf086fb41",
+      "polygon": [
+        {
+          "lat": 49.928640638465176,
+          "lng": -97.12733745574951
+        },
+        {
+          "lat": 49.92946942257667,
+          "lng": -97.12983727455139
+        },
+        {
+          "lat": 49.93011862684324,
+          "lng": -97.12937593460084
+        },
+        {
+          "lat": 49.92927604089205,
+          "lng": -97.12692975997926
+        }
+      ],
+      "pin": {
+        "lat": 49.92923460185865,
+        "lng": -97.12739109992981
+      },
+      "address": "282, Lansdowne Avenue, St. John’s, West Kildonan, Mynarski, Winnipeg, Manitoba, R2W 3V7, Canada",
+      "addressShort": "282 Lansdowne Avenue",
+      "color": "#E15759",
+      "colorLocked": false,
+      "status": "pending",
+      "selectedForPdf": true,
+      "createdAt": 1777762894834,
+      "updatedAt": 1777764311348
+    },
+    {
+      "id": "8883e572-7de5-4d4b-b312-108d858b481d",
+      "polygon": [
+        {
+          "lat": 49.92927604089205,
+          "lng": -97.12692975997926
+        },
+        {
+          "lat": 49.93011862684324,
+          "lng": -97.12937593460084
+        },
+        {
+          "lat": 49.93059516483521,
+          "lng": -97.1289896965027
+        },
+        {
+          "lat": 49.92981474508369,
+          "lng": -97.126522064209
+        }
+      ],
+      "pin": {
+        "lat": 49.92983546435544,
+        "lng": -97.12702631950378
+      },
+      "address": "Carruthers Avenue, Jefferson, West Kildonan, Mynarski, Winnipeg, Manitoba, R2V 0L2, Canada",
+      "addressShort": "Carruthers Avenue",
+      "color": "#76B7B2",
+      "colorLocked": false,
+      "status": "pending",
+      "selectedForPdf": true,
+      "createdAt": 1777762903128,
+      "updatedAt": 1777764320989
+    },
+    {
+      "id": "e892d125-535c-4f35-9576-01d90c5abd97",
+      "polygon": [
+        {
+          "lat": 49.93059516483521,
+          "lng": -97.1289896965027
+        },
+        {
+          "lat": 49.93138247815092,
+          "lng": -97.1283781528473
+        },
+        {
+          "lat": 49.9297249614699,
+          "lng": -97.12326049804689
+        },
+        {
+          "lat": 49.928889275195004,
+          "lng": -97.12358236312866
+        }
+      ],
+      "pin": {
+        "lat": 49.93069185312813,
+        "lng": -97.12656497955324
+      },
+      "address": "277, Matheson Avenue, Jefferson, West Kildonan, Mynarski, Winnipeg, Manitoba, R2V 0L2, Canada",
+      "addressShort": "277 Matheson Avenue",
+      "color": "#59A14F",
+      "colorLocked": false,
+      "status": "pending",
+      "selectedForPdf": true,
+      "createdAt": 1777763655581,
+      "updatedAt": 1777764321819
+    },
+    {
+      "id": "2695f4dd-b901-431f-b007-daf4516e6da3",
+      "polygon": [
+        {
+          "lat": 49.9297249614699,
+          "lng": -97.12326049804689
+        },
+        {
+          "lat": 49.930677347738445,
+          "lng": -97.12620101053756
+        },
+        {
+          "lat": 49.93144463391753,
+          "lng": -97.1254062652588
+        },
+        {
+          "lat": 49.93053991429499,
+          "lng": -97.12268114089967
+        }
+      ],
+      "pin": {
+        "lat": 49.93067113422455,
+        "lng": -97.12335705757143
+      },
+      "address": "231, McAdam Avenue, Jefferson, West Kildonan, Mynarski, Winnipeg, Manitoba, R2V 0L5, Canada",
+      "addressShort": "231 McAdam Avenue",
+      "color": "#EDC948",
+      "colorLocked": false,
+      "status": "pending",
+      "selectedForPdf": true,
+      "createdAt": 1777763688218,
+      "updatedAt": 1777764322347
+    }
+  ]
+}

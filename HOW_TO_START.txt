@@ -1,0 +1,65 @@
+HOW TO START THE APPLICATION (Winnipeg Canvass)
+================================================
+
+This is an Electron desktop app (electron-vite + React). To run it in
+development mode:
+
+    npm run dev
+
+This builds the Electron main/preload processes, starts the Vite dev
+server (renderer) on http://localhost:5173, and launches the Electron
+window.
+
+If dependencies aren't installed yet:
+
+    npm install
+
+
+COMMON GOTCHA: "Cannot read properties of undefined (reading 'whenReady')"
+-------------------------------------------------------------------------
+If launching crashes with:
+
+    TypeError: Cannot read properties of undefined (reading 'whenReady')
+        at .../out/main/index.js  ->  electron.app.whenReady()
+
+...the `electron.app` object is undefined because the environment has
+ELECTRON_RUN_AS_NODE=1 set. That variable forces the Electron binary to
+run as a plain Node.js interpreter, so the Electron APIs (app,
+BrowserWindow, etc.) are never injected. It is NOT a bug in the app.
+
+FIX: unset the variable before launching:
+
+    unset ELECTRON_RUN_AS_NODE
+    npm run dev
+
+Or as a one-liner:
+
+    env -u ELECTRON_RUN_AS_NODE npm run dev
+
+
+DISPLAY (headless / remote sessions)
+------------------------------------
+The app needs an X display. On this machine the display is :1, so if
+DISPLAY isn't set, export it first:
+
+    export DISPLAY=:1
+    npm run dev
+
+On Linux the renderer runs with --no-sandbox automatically in this
+setup; no extra flags are needed.
+
+
+OTHER USEFUL SCRIPTS
+--------------------
+    npm run build        # build without launching
+    npm run preview      # preview a production build
+    npm run typecheck    # TypeScript type checking
+    npm run dist:linux   # package a Linux distributable
+    npm run dist:win     # package a Windows distributable
+
+
+ENTRY POINTS (for reference)
+----------------------------
+    electron/main/index.ts     -> out/main/index.js     (main process)
+    electron/preload/index.ts  -> out/preload/index.js  (preload)
+    index.html + src/main.tsx  -> renderer (React UI)
