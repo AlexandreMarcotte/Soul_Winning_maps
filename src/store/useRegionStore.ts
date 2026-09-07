@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import type { LatLng, Project, Region, RegionStatus } from '@/types/region';
 import { emptyProject } from '@/types/region';
-import { pickColor } from '@/lib/colorPalette';
+import { pickColor, assignUniqueColors } from '@/lib/colorPalette';
+import { MapGroupManager } from '@/lib/mapGroups';
 
 export type AppMode = 'idle' | 'drawing' | 'pin-drop' | 'church-pin';
 
@@ -22,6 +23,8 @@ interface RegionState {
   pendingPinForRegionId: string | null;
   /** UI-only: region currently hovered in the sidebar, used to highlight it on the map. */
   hoveredRegionId: string | null;
+  /** UI-only: group header hovered in the sidebar, highlights every member on the map. */
+  hoveredGroupId: string | null;
   geocodingIds: Set<string>;
   /** UI-only: when true, polygons are filled with a heatmap color based on soulsSaved. */
   heatmapEnabled: boolean;
@@ -32,9 +35,12 @@ interface RegionState {
 
   setMode: (m: AppMode) => void;
   setHoveredRegionId: (id: string | null) => void;
+  setHoveredGroupId: (id: string | null) => void;
   setHeatmapEnabled: (value: boolean) => void;
   setHeatmapCap: (value: number | null) => void;
   loadProject: (p: Project, path: string | null) => void;
+  /** Reassign unlocked region colours so each is unique across the project. */
+  ensureUniqueRegionColors: () => void;
   setFilePath: (path: string) => void;
   markClean: () => void;
   /** Revert to the previous project snapshot. No-op when history is empty. */
@@ -58,7 +64,16 @@ interface RegionState {
   setRegionStatus: (id: string, status: RegionStatus) => void;
   toggleSelected: (id: string) => void;
   setAllSelected: (selected: boolean) => void;
+  /** Set selectedForPdf for a specific set of region ids (one undo step). */
+  setSelectedForIds: (ids: string[], selected: boolean) => void;
   selectAllPending: () => void;
+  toggleGroupSelected: (groupId: string) => void;
+
+  groupSelectedRegions: () => boolean;
+  renameGroup: (groupId: string, name: string) => void;
+  ungroup: (groupId: string) => void;
+  addSelectedToGroup: (groupId: string) => void;
+  removeRegionFromGroup: (regionId: string) => void;
 
   startGeocoding: (id: string) => void;
   finishGeocoding: (id: string) => void;
@@ -100,6 +115,7 @@ export const useRegionStore = create<RegionState>((set, get) => {
   mode: 'idle',
   pendingPinForRegionId: null,
   hoveredRegionId: null,
+  hoveredGroupId: null,
   geocodingIds: new Set(),
   heatmapEnabled: false,
   heatmapCap: null,
@@ -107,19 +123,38 @@ export const useRegionStore = create<RegionState>((set, get) => {
 
   setMode: (mode) => set({ mode }),
   setHoveredRegionId: (hoveredRegionId) => set({ hoveredRegionId }),
+  setHoveredGroupId: (hoveredGroupId) => set({ hoveredGroupId }),
   setHeatmapEnabled: (heatmapEnabled) => set({ heatmapEnabled }),
   setHeatmapCap: (heatmapCap) => set({ heatmapCap }),
 
-  loadProject: (project, filePath) =>
+  loadProject: (project, filePath) => {
+    const colored = assignUniqueColors(project.regions);
+    const mgr = new MapGroupManager(project.groups ?? [], colored);
+    const groupsPruned = mgr.pruneEmpty();
+    const { groups, regions } = mgr.snapshot();
+    const colorsFixed = colored !== project.regions;
     set({
-      project,
+      project: { ...project, regions, groups },
       filePath,
-      dirty: false,
+      // Persist unique-colour / orphan-group cleanup on next save.
+      dirty: colorsFixed || groupsPruned,
       mode: 'idle',
       pendingPinForRegionId: null,
       history: [],
       future: [],
-    }),
+    });
+  },
+
+  ensureUniqueRegionColors: () => {
+    const { project } = get();
+    const regions = assignUniqueColors(project.regions);
+    if (regions === project.regions) return;
+    set({
+      ...snapshot(),
+      project: touch({ ...project, regions }),
+      dirty: true,
+    });
+  },
 
   setFilePath: (filePath) => set({ filePath }),
   markClean: () => set({ dirty: false }),
@@ -165,6 +200,7 @@ export const useRegionStore = create<RegionState>((set, get) => {
       status: 'pending',
       selectedForPdf: false,
       soulsSaved: 0,
+      groupId: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -194,9 +230,12 @@ export const useRegionStore = create<RegionState>((set, get) => {
 
   removeRegion: (id) => {
     const { project } = get();
+    const mgr = new MapGroupManager(project.groups ?? [], project.regions.filter((r) => r.id !== id));
+    mgr.pruneEmpty();
+    const { groups, regions } = mgr.snapshot();
     set({
       ...snapshot(),
-      project: touch({ ...project, regions: project.regions.filter((r) => r.id !== id) }),
+      project: touch({ ...project, regions, groups }),
       dirty: true,
     });
   },
@@ -204,9 +243,15 @@ export const useRegionStore = create<RegionState>((set, get) => {
   removeRegions: (ids) => {
     const idSet = new Set(ids);
     const { project } = get();
+    const mgr = new MapGroupManager(
+      project.groups ?? [],
+      project.regions.filter((r) => !idSet.has(r.id)),
+    );
+    mgr.pruneEmpty();
+    const { groups, regions } = mgr.snapshot();
     set({
       ...snapshot(),
-      project: touch({ ...project, regions: project.regions.filter((r) => !idSet.has(r.id)) }),
+      project: touch({ ...project, regions, groups }),
       dirty: true,
     });
   },
@@ -249,6 +294,22 @@ export const useRegionStore = create<RegionState>((set, get) => {
     });
   },
 
+  setSelectedForIds: (ids, selected) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const { project } = get();
+    set({
+      ...snapshot(),
+      project: touch({
+        ...project,
+        regions: project.regions.map((r) =>
+          idSet.has(r.id) ? { ...r, selectedForPdf: selected } : r,
+        ),
+      }),
+      dirty: true,
+    });
+  },
+
   selectAllPending: () => {
     const { project } = get();
     set({
@@ -260,6 +321,87 @@ export const useRegionStore = create<RegionState>((set, get) => {
           selectedForPdf: r.status === 'pending',
         })),
       }),
+      dirty: true,
+    });
+  },
+
+  toggleGroupSelected: (groupId) => {
+    const { project } = get();
+    const members = project.regions.filter((r) => r.groupId === groupId);
+    if (members.length === 0) return;
+    const next = !members.every((r) => r.selectedForPdf);
+    set({
+      ...snapshot(),
+      project: touch({
+        ...project,
+        regions: project.regions.map((r) =>
+          r.groupId === groupId ? { ...r, selectedForPdf: next } : r,
+        ),
+      }),
+      dirty: true,
+    });
+  },
+
+  groupSelectedRegions: () => {
+    const { project } = get();
+    const ids = project.regions.filter((r) => r.selectedForPdf).map((r) => r.id);
+    const mgr = new MapGroupManager(project.groups ?? [], project.regions);
+    if (!mgr.createFromRegionIds(ids)) return false;
+    const { groups, regions } = mgr.snapshot();
+    set({
+      ...snapshot(),
+      project: touch({ ...project, groups, regions }),
+      dirty: true,
+    });
+    return true;
+  },
+
+  renameGroup: (groupId, name) => {
+    const { project } = get();
+    const mgr = new MapGroupManager(project.groups ?? [], project.regions);
+    if (!mgr.rename(groupId, name)) return;
+    const { groups } = mgr.snapshot();
+    set({
+      ...snapshot(),
+      project: touch({ ...project, groups }),
+      dirty: true,
+    });
+  },
+
+  ungroup: (groupId) => {
+    const { project } = get();
+    const mgr = new MapGroupManager(project.groups ?? [], project.regions);
+    mgr.ungroup(groupId);
+    const { groups, regions } = mgr.snapshot();
+    set({
+      ...snapshot(),
+      project: touch({ ...project, groups, regions }),
+      dirty: true,
+    });
+  },
+
+  addSelectedToGroup: (groupId) => {
+    const { project } = get();
+    const ids = project.regions.filter((r) => r.selectedForPdf).map((r) => r.id);
+    if (ids.length === 0) return;
+    const mgr = new MapGroupManager(project.groups ?? [], project.regions);
+    mgr.addRegionsToGroup(groupId, ids);
+    const { groups, regions } = mgr.snapshot();
+    set({
+      ...snapshot(),
+      project: touch({ ...project, groups, regions }),
+      dirty: true,
+    });
+  },
+
+  removeRegionFromGroup: (regionId) => {
+    const { project } = get();
+    const mgr = new MapGroupManager(project.groups ?? [], project.regions);
+    mgr.removeRegionFromGroup(regionId);
+    const { groups, regions } = mgr.snapshot();
+    set({
+      ...snapshot(),
+      project: touch({ ...project, groups, regions }),
       dirty: true,
     });
   },

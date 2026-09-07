@@ -12,6 +12,7 @@ export function AddressSearch() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const mapCenter = useRegionStore((s) => s.project.mapCenter);
   const setMapView = useRegionStore((s) => s.setMapView);
   const setSearchMarker = useRegionStore((s) => s.setSearchMarker);
   const setChurchPin = useRegionStore((s) => s.setChurchPin);
@@ -44,7 +45,7 @@ export function AddressSearch() {
     setError(null);
     setActiveIndex(-1);
     try {
-      const found = await searchAddress(trimmed);
+      const found = await searchAddress(trimmed, mapCenter);
       setResults(found);
       setOpen(true);
       if (found.length === 0) setError('No addresses found');

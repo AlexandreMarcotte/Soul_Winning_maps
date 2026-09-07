@@ -110,6 +110,7 @@ export function RegionLayer({ map }: Props) {
   const regions = useRegionStore((s) => s.project.regions);
   const mode = useRegionStore((s) => s.mode);
   const hoveredRegionId = useRegionStore((s) => s.hoveredRegionId);
+  const hoveredGroupId = useRegionStore((s) => s.hoveredGroupId);
   const heatmapEnabled = useRegionStore((s) => s.heatmapEnabled);
   const heatmapCap = useRegionStore((s) => s.heatmapCap);
   const toggleSelected = useRegionStore((s) => s.toggleSelected);
@@ -149,7 +150,7 @@ export function RegionLayer({ map }: Props) {
 
     const syncRegionPaths = (r: Region): void => {
       const latlngs = r.polygon.map((p) => [p.lat, p.lng] as [number, number]);
-      const hovered = hoveredRegionId === r.id;
+      const hovered = hoveredRegionId === r.id || (hoveredGroupId != null && r.groupId === hoveredGroupId);
       const style = styleFor(r, heatmap, hovered);
       const weight = typeof style.weight === 'number' ? style.weight : 3;
 
@@ -272,7 +273,7 @@ export function RegionLayer({ map }: Props) {
     const onZoomEnd = (): void => {
       for (const r of regions) {
         if (!seen.has(r.id)) continue;
-        const hovered = hoveredRegionId === r.id;
+        const hovered = hoveredRegionId === r.id || (hoveredGroupId != null && r.groupId === hoveredGroupId);
         const style = styleFor(r, heatmap, hovered);
         const weight = typeof style.weight === 'number' ? style.weight : 3;
         const stroke = strokeMap.get(r.id);
@@ -285,7 +286,7 @@ export function RegionLayer({ map }: Props) {
     return () => {
       map.off('zoomend', onZoomEnd);
     };
-  }, [regions, map, heatmapEnabled, effectiveMax, hoveredRegionId]);
+  }, [regions, map, heatmapEnabled, effectiveMax, hoveredRegionId, hoveredGroupId]);
 
   // Click handlers
   useEffect(() => {

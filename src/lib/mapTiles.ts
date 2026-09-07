@@ -8,7 +8,8 @@ export const ESRI_WORLD_IMAGERY_URL =
 
 /**
  * Transparent PNG tiles with roads and labels only — use above imagery or another base.
- * @2x variant returns 512×512 tiles for crisper text; pair with tileSize:512, zoomOffset:-1.
+ * @2x returns a 512×512 image for the same z/x/y cell as a normal 256px tile (crisper text).
+ * Use default Leaflet tileSize (256) — do not pair with tileSize:512 / zoomOffset:-1.
  */
 export const CARTO_VOYAGER_LABELS_URL =
   'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png';

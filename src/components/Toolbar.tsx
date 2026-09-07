@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useRegionStore } from '@/store/useRegionStore';
 import { AddressSearch } from './AddressSearch';
+import { CitySwitcher } from './CitySwitcher';
 
 interface Props {
   onOpen: () => void;
@@ -85,6 +86,7 @@ export function Toolbar({ onOpen, onSave, onSaveAs, onOpenPdfFolder, hasPdfFolde
         }
       />
       <Divider />
+      <CitySwitcher />
       <AddressSearch />
       <Divider />
       <ToolBtn

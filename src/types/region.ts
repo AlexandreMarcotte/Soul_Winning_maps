@@ -2,6 +2,13 @@ export type LatLng = { lat: number; lng: number };
 
 export type RegionStatus = 'pending' | 'done';
 
+export interface MapGroup {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Region {
   id: string;
   polygon: LatLng[];
@@ -14,6 +21,8 @@ export interface Region {
   selectedForPdf: boolean;
   /** Non-negative count of souls saved for this region / map capture. */
   soulsSaved: number;
+  /** When set, this region belongs to a named group in the sidebar. */
+  groupId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -32,10 +41,13 @@ export interface Project {
   churchAddress: string;
   churchAddressShort?: string;
   regions: Region[];
+  groups: MapGroup[];
 }
 
-export const WINNIPEG_CENTER: LatLng = { lat: 49.8951, lng: -97.1384 };
-export const WINNIPEG_ZOOM = 12;
+import { DEFAULT_MAP_CITY } from '@/lib/mapCities';
+
+export const WINNIPEG_CENTER: LatLng = DEFAULT_MAP_CITY.center;
+export const WINNIPEG_ZOOM = DEFAULT_MAP_CITY.zoom;
 
 export function emptyProject(): Project {
   const now = Date.now();
@@ -44,11 +56,12 @@ export function emptyProject(): Project {
     name: 'Soulwinning-26-05-02',
     createdAt: now,
     updatedAt: now,
-    mapCenter: WINNIPEG_CENTER,
-    mapZoom: WINNIPEG_ZOOM,
+    mapCenter: DEFAULT_MAP_CITY.center,
+    mapZoom: DEFAULT_MAP_CITY.zoom,
     satelliteBasemap: true,
     churchPin: null,
     churchAddress: '',
     regions: [],
+    groups: [],
   };
 }

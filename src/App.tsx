@@ -12,8 +12,14 @@ export default function App() {
   const setMode = useRegionStore((s) => s.setMode);
   const undo = useRegionStore((s) => s.undo);
   const redo = useRegionStore((s) => s.redo);
+  const ensureUniqueRegionColors = useRegionStore((s) => s.ensureUniqueRegionColors);
   const { openProject, saveProject, saveProjectAs, exportPdf, openPdfFolder, lastPdfPath, isExporting } = useProjectIO();
   useAutosave();
+
+  // Fix projects that reused colours across distant clusters (legacy pickColor).
+  useEffect(() => {
+    ensureUniqueRegionColors();
+  }, [ensureUniqueRegionColors]);
 
   useEffect(() => {
     const offOpen = window.api.onMenu('open', openProject);

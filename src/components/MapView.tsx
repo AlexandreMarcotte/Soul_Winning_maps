@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import { useRegionStore } from '@/store/useRegionStore';
@@ -18,7 +18,7 @@ const SATELLITE_ATTR =
 
 export function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
+  const [map, setMap] = useState<L.Map | null>(null);
   const baseTileRef = useRef<L.TileLayer | null>(null);
   const labelsTileRef = useRef<L.TileLayer | null>(null);
   const searchMarkerRef = useRef<L.Marker | null>(null);
@@ -26,7 +26,8 @@ export function MapView() {
   // Prevent feedback loop: when we programmatically call setView, skip the moveend handler.
   const programmaticMoveRef = useRef(false);
 
-  const project = useRegionStore((s) => s.project);
+  const mapCenter = useRegionStore((s) => s.project.mapCenter);
+  const mapZoom = useRegionStore((s) => s.project.mapZoom);
   const satelliteBasemap = useRegionStore((s) => s.project.satelliteBasemap);
   const setSatelliteBasemap = useRegionStore((s) => s.setSatelliteBasemap);
   const searchMarker = useRegionStore((s) => s.searchMarker);
@@ -43,80 +44,80 @@ export function MapView() {
   const setMode = useRegionStore((s) => s.setMode);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current) return;
 
-    const map = L.map(containerRef.current, {
-      center: [project.mapCenter.lat, project.mapCenter.lng],
-      zoom: project.mapZoom,
+    const mapInstance = L.map(containerRef.current, {
+      center: [mapCenter.lat, mapCenter.lng],
+      zoom: mapZoom,
       zoomControl: true,
-      preferCanvas: true,
+      // Canvas default can leave vector overlays blank after map remounts (StrictMode/HMR).
+      preferCanvas: false,
       attributionControl: false,
     });
 
-    map.createPane('streetLabels');
-    const streetLabelsPane = map.getPane('streetLabels');
+    // Labels above basemap tiles, but below region polygons + pins so maps stay visible.
+    mapInstance.createPane('streetLabels');
+    const streetLabelsPane = mapInstance.getPane('streetLabels');
     if (streetLabelsPane) {
-      streetLabelsPane.style.zIndex = '650';
+      streetLabelsPane.style.zIndex = '350';
       streetLabelsPane.style.pointerEvents = 'none';
     }
 
     // Geoman config
-    map.pm.setGlobalOptions({
+    mapInstance.pm.setGlobalOptions({
       snappable: true,
       snapDistance: 20,
       finishOn: 'dblclick',
       allowSelfIntersection: false,
     });
     // Make sure Geoman's own toolbar is hidden (we have our own)
-    map.pm.addControls({ position: 'topleft' });
-    const ctrl = (map.pm as any).Toolbar?.options;
+    mapInstance.pm.addControls({ position: 'topleft' });
+    const ctrl = (mapInstance.pm as any).Toolbar?.options;
     if (ctrl) ctrl.position = 'topleft';
-    (map.pm as any).Toolbar?.toggleControls?.();
-    map.pm.removeControls();
+    (mapInstance.pm as any).Toolbar?.toggleControls?.();
+    mapInstance.pm.removeControls();
 
-    map.on('moveend', () => {
+    mapInstance.on('moveend', () => {
       if (programmaticMoveRef.current) return;
-      const c = map.getCenter();
-      setMapView({ lat: c.lat, lng: c.lng }, map.getZoom());
+      const c = mapInstance.getCenter();
+      setMapView({ lat: c.lat, lng: c.lng }, mapInstance.getZoom());
     });
 
-    map.on('pm:create', (e: any) => {
+    mapInstance.on('pm:create', (e: any) => {
       const layer = e.layer as L.Polygon;
       const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map((ll) => ({
         lat: ll.lat,
         lng: ll.lng,
       }));
       // Remove the layer Geoman added — we manage rendering ourselves via RegionLayer.
-      map.removeLayer(layer);
+      mapInstance.removeLayer(layer);
       addRegion(latlngs);
     });
 
-    mapRef.current = map;
+    setMap(mapInstance);
 
     // Leaflet doesn't detect container resize on its own (e.g. fullscreen toggle).
-    const observer = new ResizeObserver(() => map.invalidateSize());
-    if (containerRef.current) observer.observe(containerRef.current);
+    const observer = new ResizeObserver(() => mapInstance.invalidateSize());
+    observer.observe(containerRef.current);
 
     return () => {
       observer.disconnect();
-      map.remove();
-      mapRef.current = null;
+      setMap(null);
+      mapInstance.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync map view when project is loaded from file (mapCenter/mapZoom change externally).
   useEffect(() => {
-    const map = mapRef.current;
     if (!map) return;
     programmaticMoveRef.current = true;
-    map.setView([project.mapCenter.lat, project.mapCenter.lng], project.mapZoom, { animate: false });
+    map.setView([mapCenter.lat, mapCenter.lng], mapZoom, { animate: false });
     programmaticMoveRef.current = false;
-  }, [project.mapCenter, project.mapZoom]);
+  }, [map, mapCenter, mapZoom]);
 
   // Base map + optional street-label overlay (matches PDF capture: Esri + CARTO voyager_only_labels).
   useEffect(() => {
-    const map = mapRef.current;
     if (!map) return;
 
     if (baseTileRef.current) map.removeLayer(baseTileRef.current);
@@ -130,12 +131,12 @@ export function MapView() {
         attribution: SATELLITE_ATTR,
         maxZoom: 19,
       }).addTo(map);
+      // CARTO @2x tiles are still on the 256px z/x/y grid (just sharper images).
+      // Do not set tileSize:512 / zoomOffset:-1 — that stretches labels ~2×.
       labelsTileRef.current = L.tileLayer(CARTO_VOYAGER_LABELS_URL, {
         attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
         maxZoom: 19,
         subdomains: 'abcd',
-        tileSize: 512,
-        zoomOffset: -1,
         pane: 'streetLabels',
       }).addTo(map);
     } else {
@@ -143,7 +144,7 @@ export function MapView() {
         map,
       );
     }
-  }, [satelliteBasemap]);
+  }, [map, satelliteBasemap]);
 
   // While actively drawing a polygon, Ctrl+Z removes the last placed vertex
   // (Geoman keeps in-progress vertices in its own state, not the store, so the
@@ -152,7 +153,6 @@ export function MapView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z')) return;
-      const map = mapRef.current;
       if (!map || !map.pm.globalDrawModeEnabled()) return;
       const draw = (map.pm.Draw as any)?.Polygon;
       // Only act when at least one vertex has been placed. Geoman tracks placed
@@ -164,11 +164,10 @@ export function MapView() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, []);
+  }, [map]);
 
   // Toggle drawing mode based on store
   useEffect(() => {
-    const map = mapRef.current;
     if (!map) return;
     if (mode === 'drawing') {
       map.pm.enableDraw('Polygon', {
@@ -180,11 +179,10 @@ export function MapView() {
     } else {
       if (map.pm.globalDrawModeEnabled()) map.pm.disableDraw();
     }
-  }, [mode]);
+  }, [map, mode]);
 
   // Pin-drop interaction
   useEffect(() => {
-    const map = mapRef.current;
     if (!map) return;
     if (mode !== 'pin-drop' || !pendingPinForRegionId) {
       containerRef.current?.classList.remove('pin-drop-cursor');
@@ -215,11 +213,10 @@ export function MapView() {
       map.off('click', onClick);
       containerRef.current?.classList.remove('pin-drop-cursor');
     };
-  }, [mode, pendingPinForRegionId, setRegionPin, setRegionAddress, startGeocoding, finishGeocoding, setMode]);
+  }, [map, mode, pendingPinForRegionId, setRegionPin, setRegionAddress, startGeocoding, finishGeocoding, setMode]);
 
   // Church pin placement / reposition via map click.
   useEffect(() => {
-    const map = mapRef.current;
     if (!map) return;
     if (mode !== 'church-pin') {
       containerRef.current?.classList.remove('pin-drop-cursor');
@@ -241,12 +238,14 @@ export function MapView() {
       map.off('click', onClick);
       containerRef.current?.classList.remove('pin-drop-cursor');
     };
-  }, [mode, setChurchPin]);
+  }, [map, mode, setChurchPin]);
 
   // Temporary marker for address search results.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!map) {
+      searchMarkerRef.current = null;
+      return;
+    }
 
     if (!searchMarker) {
       if (searchMarkerRef.current) {
@@ -262,7 +261,14 @@ export function MapView() {
     </svg>`;
     const icon = L.divIcon({ html, className: '', iconSize: [28, 42], iconAnchor: [14, 42] });
 
-    if (!searchMarkerRef.current) {
+    if (!searchMarkerRef.current || !(map as any).hasLayer?.(searchMarkerRef.current)) {
+      if (searchMarkerRef.current) {
+        try {
+          searchMarkerRef.current.remove();
+        } catch {
+          /* old map may already be gone */
+        }
+      }
       searchMarkerRef.current = L.marker([searchMarker.lat, searchMarker.lng], {
         icon,
         interactive: false,
@@ -272,12 +278,14 @@ export function MapView() {
       searchMarkerRef.current.setLatLng([searchMarker.lat, searchMarker.lng]);
       searchMarkerRef.current.setIcon(icon);
     }
-  }, [searchMarker]);
+  }, [map, searchMarker]);
 
   // Persisted church building pin.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!map) {
+      churchMarkerRef.current = null;
+      return;
+    }
 
     if (!churchPin) {
       if (churchMarkerRef.current) {
@@ -294,7 +302,14 @@ export function MapView() {
       iconAnchor: [15, 45],
     });
 
-    if (!churchMarkerRef.current) {
+    if (!churchMarkerRef.current || !(map as any).hasLayer?.(churchMarkerRef.current)) {
+      if (churchMarkerRef.current) {
+        try {
+          churchMarkerRef.current.remove();
+        } catch {
+          /* old map may already be gone */
+        }
+      }
       churchMarkerRef.current = L.marker([churchPin.lat, churchPin.lng], {
         icon,
         interactive: false,
@@ -304,12 +319,12 @@ export function MapView() {
       churchMarkerRef.current.setLatLng([churchPin.lat, churchPin.lng]);
       churchMarkerRef.current.setIcon(icon);
     }
-  }, [churchPin]);
+  }, [map, churchPin]);
 
   return (
     <>
       <div ref={containerRef} className="absolute inset-0" />
-      {mapRef.current && <RegionLayer map={mapRef.current} />}
+      {map && <RegionLayer map={map} />}
       <PinDropPrompt />
       <ChurchPinPrompt />
       <button

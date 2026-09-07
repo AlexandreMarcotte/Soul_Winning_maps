@@ -1,4 +1,4 @@
-import type { Project } from '@/types/region';
+import type { MapGroup, Project } from '@/types/region';
 import { emptyProject } from '@/types/region';
 
 function nonNegativeInt(value: unknown, fallback: number): number {
@@ -32,6 +32,7 @@ export function parseProject(json: string): Project {
     churchAddress: String(raw.churchAddress ?? ''),
     churchAddressShort:
       raw.churchAddressShort !== undefined ? String(raw.churchAddressShort) : undefined,
+    groups: parseGroups(raw.groups),
     regions: raw.regions.map((r: any) => ({
       id: String(r.id),
       polygon: Array.isArray(r.polygon) ? r.polygon : [],
@@ -43,8 +44,21 @@ export function parseProject(json: string): Project {
       status: r.status === 'done' ? 'done' : 'pending',
       selectedForPdf: Boolean(r.selectedForPdf),
       soulsSaved: nonNegativeInt(r.soulsSaved, 0),
+      groupId: typeof r.groupId === 'string' && r.groupId ? r.groupId : null,
       createdAt: Number(r.createdAt ?? Date.now()),
       updatedAt: Number(r.updatedAt ?? Date.now()),
     })),
   };
+}
+
+function parseGroups(raw: unknown): MapGroup[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((g) => g && typeof g === 'object' && typeof (g as MapGroup).id === 'string')
+    .map((g: any) => ({
+      id: String(g.id),
+      name: String(g.name ?? 'Group').trim() || 'Group',
+      createdAt: Number(g.createdAt ?? Date.now()),
+      updatedAt: Number(g.updatedAt ?? Date.now()),
+    }));
 }

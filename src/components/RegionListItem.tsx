@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Crosshair, Loader2, MapPin, Trash2 } from 'lucide-react';
+import { Check, Crosshair, FolderMinus, Loader2, MapPin, Trash2 } from 'lucide-react';
 import type { Region } from '@/types/region';
 import { useRegionStore } from '@/store/useRegionStore';
 import { ColorPicker } from './ColorPicker';
@@ -9,18 +9,30 @@ interface Props {
   onDelete: () => void;
   deleteMode?: boolean;
   markedForDelete?: boolean;
-  onToggleDeleteMark?: () => void;
+  /** Called with whether Shift was held — used for range select/mark. */
+  onSelectClick?: (id: string, shiftKey: boolean) => void;
+  onToggleDeleteMark?: (shiftKey: boolean) => void;
+  nested?: boolean;
 }
 
 const DONE_COLOR = '#6B7280';
 
-export function RegionListItem({ region: r, onDelete, deleteMode = false, markedForDelete = false, onToggleDeleteMark }: Props) {
+export function RegionListItem({
+  region: r,
+  onDelete,
+  deleteMode = false,
+  markedForDelete = false,
+  onSelectClick,
+  onToggleDeleteMark,
+  nested = false,
+}: Props) {
   const toggleSelected = useRegionStore((s) => s.toggleSelected);
   const updateRegion = useRegionStore((s) => s.updateRegion);
   const setRegionStatus = useRegionStore((s) => s.setRegionStatus);
   const setRegionColor = useRegionStore((s) => s.setRegionColor);
   const setHoveredRegionId = useRegionStore((s) => s.setHoveredRegionId);
   const beginRepositionPin = useRegionStore((s) => s.beginRepositionPin);
+  const removeRegionFromGroup = useRegionStore((s) => s.removeRegionFromGroup);
   const mode = useRegionStore((s) => s.mode);
   const pendingPinForRegionId = useRegionStore((s) => s.pendingPinForRegionId);
   const isGeocoding = useRegionStore((s) => s.geocodingIds.has(r.id));
@@ -33,7 +45,9 @@ export function RegionListItem({ region: r, onDelete, deleteMode = false, marked
     <li
       onMouseEnter={() => setHoveredRegionId(r.id)}
       onMouseLeave={() => setHoveredRegionId(null)}
-      className={`group flex items-start gap-2 px-3 py-2.5 transition-colors ${
+      className={`group flex items-start gap-2 py-2.5 transition-colors ${
+        nested ? 'border-l-2 border-accent/30 pl-7 pr-3' : 'px-3'
+      } ${
         deleteMode
           ? markedForDelete
             ? 'bg-red-50'
@@ -46,26 +60,37 @@ export function RegionListItem({ region: r, onDelete, deleteMode = false, marked
       {deleteMode ? (
         <button
           type="button"
-          onClick={onToggleDeleteMark}
+          onMouseDown={(e) => {
+            if (e.shiftKey) e.preventDefault();
+          }}
+          onClick={(e) => onToggleDeleteMark?.(e.shiftKey)}
           className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
             markedForDelete
               ? 'border-red-500 bg-red-500 text-white'
               : 'border-gray-300 bg-white hover:border-red-400'
           }`}
           aria-label="Mark for deletion"
+          title="Click to mark · Shift+click for range"
         >
           {markedForDelete && <Check size={14} />}
         </button>
       ) : (
         <button
           type="button"
-          onClick={() => toggleSelected(r.id)}
+          onMouseDown={(e) => {
+            if (e.shiftKey) e.preventDefault();
+          }}
+          onClick={(e) => {
+            if (onSelectClick) onSelectClick(r.id, e.shiftKey);
+            else toggleSelected(r.id);
+          }}
           className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
             r.selectedForPdf
               ? 'border-accent bg-accent text-white'
               : 'border-gray-300 bg-white hover:border-accent'
           }`}
           aria-label="Toggle selection for PDF"
+          title="Click to select · Shift+click for range"
         >
           {r.selectedForPdf && <Check size={14} />}
         </button>
@@ -145,6 +170,17 @@ export function RegionListItem({ region: r, onDelete, deleteMode = false, marked
             aria-label="Move pin"
           >
             <Crosshair size={14} />
+          </button>
+        )}
+        {nested && r.groupId && !deleteMode && (
+          <button
+            type="button"
+            onClick={() => removeRegionFromGroup(r.id)}
+            className="rounded p-1 text-muted transition-colors hover:bg-gray-100 hover:text-ink"
+            title="Remove from group"
+            aria-label="Remove from group"
+          >
+            <FolderMinus size={14} />
           </button>
         )}
         <button

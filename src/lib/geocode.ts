@@ -1,4 +1,5 @@
 import type { LatLng } from '@/types/region';
+import { DEFAULT_MAP_CITY, nearestMapCity, type MapCity } from '@/lib/mapCities';
 
 export interface GeocodeResult {
   display: string;
@@ -15,9 +16,6 @@ export interface AddressSearchResult {
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 const USER_AGENT = 'WinnipegCanvass/0.1 (alexandre.marcotte.1094@gmail.com)';
 const MIN_GAP_MS = 1100;
-
-/** Approximate Winnipeg bounding box: west,north,east,south (Nominatim viewbox). */
-const WINNIPEG_VIEWBOX = '-97.35,50.05,-96.90,49.70';
 
 const reverseCache = new Map<string, GeocodeResult>();
 const searchCache = new Map<string, AddressSearchResult[]>();
@@ -66,17 +64,8 @@ async function rawReverse(p: LatLng): Promise<GeocodeResult> {
   return { display, short };
 }
 
-async function rawSearch(query: string): Promise<AddressSearchResult[]> {
-  const q = encodeURIComponent(query.trim());
-  const url =
-    `${NOMINATIM_BASE}/search?format=jsonv2&addressdetails=1&limit=5` +
-    `&countrycodes=ca&viewbox=${WINNIPEG_VIEWBOX}&bounded=0` +
-    `&q=${q}`;
-  const res = await throttledFetch(url);
-  if (!res.ok) throw new Error(`Nominatim ${res.status}`);
-  const json = (await res.json()) as any[];
+function parseSearchResults(json: unknown): AddressSearchResult[] {
   if (!Array.isArray(json)) return [];
-
   return json
     .map((item) => {
       const lat = Number(item.lat);
@@ -87,6 +76,17 @@ async function rawSearch(query: string): Promise<AddressSearchResult[]> {
       return { display, short, lat, lng } satisfies AddressSearchResult;
     })
     .filter((r): r is AddressSearchResult => r !== null);
+}
+
+async function rawSearch(query: string, city: MapCity): Promise<AddressSearchResult[]> {
+  const q = encodeURIComponent(query.trim());
+  const url =
+    `${NOMINATIM_BASE}/search?format=jsonv2&addressdetails=1&limit=5` +
+    `&countrycodes=ca&viewbox=${city.viewbox}&bounded=0` +
+    `&q=${q}`;
+  const res = await throttledFetch(url);
+  if (!res.ok) throw new Error(`Nominatim ${res.status}`);
+  return parseSearchResults(await res.json());
 }
 
 export async function reverseGeocode(p: LatLng): Promise<GeocodeResult> {
@@ -101,39 +101,32 @@ export async function reverseGeocode(p: LatLng): Promise<GeocodeResult> {
   });
 }
 
-/** Forward-geocode an address; results prefer Winnipeg but can fall outside the city. */
-export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
+/**
+ * Forward-geocode an address. Results prefer the given city (or nearest to
+ * `near` / default Winnipeg) but can fall outside that city.
+ */
+export async function searchAddress(
+  query: string,
+  near?: LatLng,
+): Promise<AddressSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const cacheKey = trimmed.toLowerCase();
+  const city = near ? nearestMapCity(near) : DEFAULT_MAP_CITY;
+  const cacheKey = `${city.id}:${trimmed.toLowerCase()}`;
   const cached = searchCache.get(cacheKey);
   if (cached) return cached;
 
   return enqueue(async () => {
-    let results = await rawSearch(trimmed);
-    // If nothing near Winnipeg, retry without the local bias so the query still works.
-    if (results.length === 0 && !/winnipeg/i.test(trimmed)) {
-      const fallbackQ = encodeURIComponent(`${trimmed}, Winnipeg, MB`);
+    let results = await rawSearch(trimmed, city);
+    // If nothing near the active city, retry with an explicit city suffix.
+    if (results.length === 0 && !city.namePattern.test(trimmed)) {
+      const fallbackQ = encodeURIComponent(`${trimmed}, ${city.searchSuffix}`);
       const url =
         `${NOMINATIM_BASE}/search?format=jsonv2&addressdetails=1&limit=5` +
         `&countrycodes=ca&q=${fallbackQ}`;
       const res = await throttledFetch(url);
-      if (res.ok) {
-        const json = (await res.json()) as any[];
-        if (Array.isArray(json)) {
-          results = json
-            .map((item) => {
-              const lat = Number(item.lat);
-              const lng = Number(item.lon);
-              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-              const display: string = item.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-              const short = shortenAddress(item) || display.split(',')[0]?.trim() || display;
-              return { display, short, lat, lng } satisfies AddressSearchResult;
-            })
-            .filter((r): r is AddressSearchResult => r !== null);
-        }
-      }
+      if (res.ok) results = parseSearchResults(await res.json());
     }
     searchCache.set(cacheKey, results);
     return results;

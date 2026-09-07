@@ -21,18 +21,70 @@ export interface CaptureRegionOptions {
 }
 
 // Output canvas size (pixels in the final JPEG).
-const CAPTURE_W = 1200;
-const CAPTURE_H = 1400;
+// ~2000 px across a ~7.5" PDF map box ≈ 270 DPI — crisp on screen and in print.
+const CAPTURE_W = 2000;
+const CAPTURE_H = 2333;
 
 // The offscreen Leaflet container is rendered at a smaller logical size, then every tile
 // and polygon coordinate is multiplied by RENDER_SCALE when drawn onto the canvas.
 // This makes all map text (street names, door numbers) appear larger in the exported PDF
 // while keeping every layer perfectly aligned — they all use the same scale factor.
-const RENDER_SCALE = 1.6;
-const CONTAINER_W = Math.round(CAPTURE_W / RENDER_SCALE); // 900
-const CONTAINER_H = Math.round(CAPTURE_H / RENDER_SCALE); // 1050
+//
+// Keep CONTAINER near the original ~750×875: street-name size is fixed in the tiles, so a
+// larger container makes labels look smaller relative to the neighborhood. CAPTURE stayed
+// at 2000 for print sharpness; RENDER_SCALE rises to match.
+const CONTAINER_W = 750;
+const CONTAINER_H = 875;
+const RENDER_SCALE = CAPTURE_W / CONTAINER_W; // ≈ 2.667
+
+/** Scale overlay strokes/pins/badges so they stay the same physical size as the old 1200-wide exports. */
+const UI_SCALE = CAPTURE_W / 1200;
+
+/** JPEG quality for embedded map images (0–1). */
+const CAPTURE_JPEG_QUALITY = 0.98;
 
 const DONE_COLOR = '#6B7280';
+
+/**
+ * Light color grade for Esri imagery in PDF captures.
+ * Avoid hue-rotate / heavy saturate — those caused the green-yellow cast in exports.
+ * Mild contrast keeps rooftops and parcel edges looking defined when printed.
+ */
+const SATELLITE_PDF_FILTER = 'contrast(1.12) brightness(1.02) saturate(1.1)';
+
+/**
+ * Leaflet “retina” tile sizing: request zoom+1 tiles but display them at half size.
+ * Native 256px imagery is then downscaled into the canvas (sharp) instead of upscaled (soft).
+ */
+function hiResBaseTileOptions(extra: L.TileLayerOptions = {}): L.TileLayerOptions {
+  return {
+    maxZoom: 18,
+    maxNativeZoom: 19,
+    tileSize: 128,
+    zoomOffset: 1,
+    ...extra,
+  };
+}
+
+function addPdfBasemapLayers(
+  map: L.Map,
+  satelliteBasemap: boolean,
+): { baseLayer: L.TileLayer; labelsLayer: L.TileLayer | null } {
+  if (satelliteBasemap) {
+    const baseLayer = L.tileLayer(ESRI_WORLD_IMAGERY_URL, hiResBaseTileOptions()).addTo(map);
+    // CARTO @2x already supplies 512px label art for the 256 grid — do not also apply hiRes.
+    const labelsLayer = L.tileLayer(CARTO_VOYAGER_LABELS_URL, {
+      maxZoom: 19,
+      subdomains: 'abcd',
+    }).addTo(map);
+    return { baseLayer, labelsLayer };
+  }
+  const baseLayer = L.tileLayer(
+    OSM_STANDARD_TILE_URL,
+    hiResBaseTileOptions({ subdomains: 'abc' }),
+  ).addTo(map);
+  return { baseLayer, labelsLayer: null };
+}
 
 function makeOffscreenContainer(): HTMLDivElement {
   const div = document.createElement('div');
@@ -132,12 +184,12 @@ function strokeDoneInteriorHatch(
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   const h = maxY - minY;
-  const pad = 24;
-  const step = 11;
+  const pad = 24 * UI_SCALE;
+  const step = 11 * UI_SCALE;
 
   ctx.strokeStyle = color;
   ctx.globalAlpha = 0.65;
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 1.8 * UI_SCALE;
   ctx.lineJoin = 'round';
   ctx.setLineDash([]);
 
@@ -180,7 +232,7 @@ function drawPolygonAndPin(
     }
     // Inset the stroke so shared edges between adjacent regions sit side-by-side
     // (each colour on its own parcel) instead of painting over one another.
-    const strokeWidth = 4;
+    const strokeWidth = 4 * UI_SCALE;
     const strokeRing = insetRing(ring, strokeWidth / 2);
     ctx.beginPath();
     ctx.moveTo(strokeRing[0].x, strokeRing[0].y);
@@ -190,7 +242,7 @@ function drawPolygonAndPin(
     ctx.globalAlpha = 1;
     ctx.lineWidth = strokeWidth;
     ctx.lineJoin = 'round';
-    if (isDone) ctx.setLineDash([8, 6]);
+    if (isDone) ctx.setLineDash([8 * UI_SCALE, 6 * UI_SCALE]);
     ctx.stroke();
     if (isDone) ctx.setLineDash([]);
   }
@@ -222,7 +274,7 @@ function drawPinAt(
   const raw = map.latLngToContainerPoint(L.latLng(pin.lat, pin.lng));
   const p = { x: raw.x * scale, y: raw.y * scale };
   // Teardrop pin — same SVG path as the on-screen Leaflet marker (24×36 viewBox, tip at bottom).
-  const PIN_SCALE = 1.4; // 24×36 → ~34×50 px on the 1200-wide capture canvas
+  const PIN_SCALE = 1.4 * UI_SCALE;
   const pinPath = new Path2D(
     'M12 0C5.373 0 0 5.373 0 12c0 8.25 12 24 12 24s12-15.75 12-24C24 5.373 18.627 0 12 0z',
   );
@@ -293,18 +345,7 @@ export async function captureOverview(
     let baseLayer: L.TileLayer;
     let labelsLayer: L.TileLayer | null = null;
 
-    if (satelliteBasemap) {
-      baseLayer = L.tileLayer(ESRI_WORLD_IMAGERY_URL, { maxZoom: 19 }).addTo(map);
-      labelsLayer = L.tileLayer(CARTO_VOYAGER_LABELS_URL, {
-        maxZoom: 19,
-        subdomains: 'abcd',
-      }).addTo(map);
-    } else {
-      baseLayer = L.tileLayer(OSM_STANDARD_TILE_URL, {
-        maxZoom: 19,
-        subdomains: 'abc',
-      }).addTo(map);
-    }
+    ({ baseLayer, labelsLayer } = addPdfBasemapLayers(map, satelliteBasemap));
 
     // Frame the selected regions. Only expand for the church pin when it sits near
     // that cluster — a distant landmark used to yank the overview off-center.
@@ -370,7 +411,12 @@ export async function captureOverview(
       );
     };
 
-    ctx.filter = 'saturate(1.8) contrast(1.05) brightness(1.12) hue-rotate(10deg)';
+    // Downscale hi-res tiles with high-quality smoothing (avoids soft bilinear defaults).
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (satelliteBasemap) {
+      ctx.filter = SATELLITE_PDF_FILTER;
+    }
     await drawLayerTiles(baseLayer);
     ctx.filter = 'none';
 
@@ -389,7 +435,7 @@ export async function captureOverview(
 
     // Pin head positions in canvas coords — used to push number badges away when
     // they would otherwise sit directly over a pin.
-    const PIN_HEAD_SCALE = 1.4; // must match drawPin's PIN_SCALE
+    const PIN_HEAD_SCALE = 1.4 * UI_SCALE; // must match drawPin's PIN_SCALE
     const PIN_HEAD_RADIUS = 12 * PIN_HEAD_SCALE; // SVG head radius scaled
     const pinHeads: { x: number; y: number }[] = [];
     for (const r of drawable) {
@@ -411,7 +457,7 @@ export async function captureOverview(
 
     // Number each polygon at its centroid so it can be cross-referenced with the
     // detail page that follows (PDF page order matches the regions array).
-    const BADGE_RADIUS = 24;
+    const BADGE_RADIUS = 24 * UI_SCALE;
     drawable.forEach((r, idx) => {
       const cx = r.polygon.reduce((s, p) => s + p.lng, 0) / r.polygon.length;
       const cy = r.polygon.reduce((s, p) => s + p.lat, 0) / r.polygon.length;
@@ -420,7 +466,7 @@ export async function captureOverview(
       let y = pt.y * RENDER_SCALE;
 
       // If the badge overlaps any pin head, nudge it away from the nearest pin.
-      const minDist = BADGE_RADIUS + PIN_HEAD_RADIUS + 4;
+      const minDist = BADGE_RADIUS + PIN_HEAD_RADIUS + 4 * UI_SCALE;
       for (let pass = 0; pass < 4; pass++) {
         let nearest: { x: number; y: number } | null = null;
         let nearestD = Infinity;
@@ -442,18 +488,18 @@ export async function captureOverview(
       }
 
       const label = String(idx + 1);
-      ctx.font = 'bold 34px sans-serif';
+      ctx.font = `bold ${Math.round(34 * UI_SCALE)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.beginPath();
       ctx.arc(x, y, BADGE_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.fill();
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * UI_SCALE;
       ctx.strokeStyle = r.status === 'done' ? DONE_COLOR : r.color;
       ctx.stroke();
       ctx.fillStyle = '#1e293b';
-      ctx.fillText(label, x, y + 1);
+      ctx.fillText(label, x, y + 1 * UI_SCALE);
     });
 
     // Pins last so they sit above polygons, label tiles, and number badges.
@@ -466,7 +512,7 @@ export async function captureOverview(
       drawPinAt(ctx, map, churchPin, CHURCH_PIN_COLOR, RENDER_SCALE, { cross: true });
     }
 
-    return canvas.toDataURL('image/jpeg', 0.95);
+    return canvas.toDataURL('image/jpeg', CAPTURE_JPEG_QUALITY);
   } finally {
     map?.remove();
     container.remove();
@@ -497,18 +543,7 @@ export async function captureRegion(region: Region, options?: CaptureRegionOptio
     let baseLayer: L.TileLayer;
     let labelsLayer: L.TileLayer | null = null;
 
-    if (satelliteBasemap) {
-      baseLayer = L.tileLayer(ESRI_WORLD_IMAGERY_URL, { maxZoom: 19 }).addTo(map);
-      labelsLayer = L.tileLayer(CARTO_VOYAGER_LABELS_URL, {
-        maxZoom: 19,
-        subdomains: 'abcd',
-      }).addTo(map);
-    } else {
-      baseLayer = L.tileLayer(OSM_STANDARD_TILE_URL, {
-        maxZoom: 19,
-        subdomains: 'abc',
-      }).addTo(map);
-    }
+    ({ baseLayer, labelsLayer } = addPdfBasemapLayers(map, satelliteBasemap));
 
     const isDone = region.status === 'done';
     const color = isDone ? DONE_COLOR : region.color;
@@ -562,9 +597,12 @@ export async function captureRegion(region: Region, options?: CaptureRegionOptio
       );
     };
 
-    // Boost saturation/contrast on the satellite base only so it looks vivid.
-    // Labels layer is drawn without filter so door/street numbers stay crisp.
-    ctx.filter = 'saturate(1.8) contrast(1.05) brightness(1.12) hue-rotate(10deg)';
+    // Downscale hi-res tiles with high-quality smoothing; labels stay unfiltered.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (satelliteBasemap) {
+      ctx.filter = SATELLITE_PDF_FILTER;
+    }
     await drawLayerTiles(baseLayer);
     ctx.filter = 'none';
 
@@ -579,7 +617,7 @@ export async function captureRegion(region: Region, options?: CaptureRegionOptio
 
     // Auto-crop: find the vertical extent of the polygon in canvas coords,
     // then trim everything outside it plus a small padding.
-    const pad = options?.cropPaddingPx ?? 60;
+    const pad = options?.cropPaddingPx ?? Math.round(60 * UI_SCALE);
     const polyYs = region.polygon.map(
       (p) => map.latLngToContainerPoint(L.latLng(p.lat, p.lng)).y * RENDER_SCALE,
     );
@@ -590,11 +628,14 @@ export async function captureRegion(region: Region, options?: CaptureRegionOptio
     const cropped = document.createElement('canvas');
     cropped.width = CAPTURE_W;
     cropped.height = croppedH;
-    cropped.getContext('2d')!.drawImage(canvas, 0, polyTop, CAPTURE_W, croppedH, 0, 0, CAPTURE_W, croppedH);
+    const cropCtx = cropped.getContext('2d')!;
+    cropCtx.imageSmoothingEnabled = true;
+    cropCtx.imageSmoothingQuality = 'high';
+    cropCtx.drawImage(canvas, 0, polyTop, CAPTURE_W, croppedH, 0, 0, CAPTURE_W, croppedH);
 
     // JPEG is significantly faster to encode and embed in PDF than PNG.
     // The canvas background is opaque (#e8e8e8) so no transparency is lost.
-    return cropped.toDataURL('image/jpeg', 0.95);
+    return cropped.toDataURL('image/jpeg', CAPTURE_JPEG_QUALITY);
   } finally {
     map?.remove();
     container.remove();

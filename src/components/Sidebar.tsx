@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Check, Circle, FileDown, ListChecks, Loader2, Square, Trash2, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Check, Circle, FileDown, FolderPlus, ListChecks, Loader2, Square, Trash2, X } from 'lucide-react';
 import { useRegionStore } from '@/store/useRegionStore';
+import { MapGroupManager, organizeRegionsByGroup } from '@/lib/mapGroups';
 import { RegionListItem } from './RegionListItem';
+import { RegionGroupSection } from './RegionGroupSection';
 import { ChurchBuildingPanel } from './ChurchBuildingPanel';
 
 interface Props {
@@ -9,16 +11,31 @@ interface Props {
   isExporting: boolean;
 }
 
+/** Inclusive slice of ids between two anchors in visible list order. */
+function idsBetween(orderedIds: string[], a: string, b: string): string[] {
+  const i = orderedIds.indexOf(a);
+  const j = orderedIds.indexOf(b);
+  if (i < 0 || j < 0) return [b];
+  const [lo, hi] = i < j ? [i, j] : [j, i];
+  return orderedIds.slice(lo, hi + 1);
+}
+
 export function Sidebar({ onExport, isExporting }: Props) {
   const regions = useRegionStore((s) => s.project.regions);
+  const groups = useRegionStore((s) => s.project.groups) ?? [];
   const setAllSelected = useRegionStore((s) => s.setAllSelected);
+  const setSelectedForIds = useRegionStore((s) => s.setSelectedForIds);
   const selectAllPending = useRegionStore((s) => s.selectAllPending);
+  const groupSelectedRegions = useRegionStore((s) => s.groupSelectedRegions);
   const removeRegion = useRegionStore((s) => s.removeRegion);
   const removeRegions = useRegionStore((s) => s.removeRegions);
+  const toggleSelected = useRegionStore((s) => s.toggleSelected);
 
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending');
   const [deleteMode, setDeleteMode] = useState(false);
   const [markedForDelete, setMarkedForDelete] = useState<Set<string>>(new Set());
+  /** Last individually clicked region — anchor for Shift+click ranges. */
+  const lastClickedIdRef = useRef<string | null>(null);
 
   const filtered = useMemo(() => {
     const sorted = [...regions].sort((a, b) => b.createdAt - a.createdAt);
@@ -26,9 +43,26 @@ export function Sidebar({ onExport, isExporting }: Props) {
     return sorted.filter((r) => r.status === filter);
   }, [regions, filter]);
 
+  const { grouped, ungrouped } = useMemo(
+    () => organizeRegionsByGroup(filtered, groups),
+    [filtered, groups],
+  );
+
+  /** Flat order matching what the user sees in the sidebar list. */
+  const visibleIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const { members } of grouped) {
+      for (const r of members) ids.push(r.id);
+    }
+    for (const r of ungrouped) ids.push(r.id);
+    return ids;
+  }, [grouped, ungrouped]);
+
   const pendingCount = regions.filter((r) => r.status === 'pending').length;
   const doneCount = regions.filter((r) => r.status === 'done').length;
   const selectedCount = regions.filter((r) => r.selectedForPdf).length;
+  const selectedIds = regions.filter((r) => r.selectedForPdf).map((r) => r.id);
+  const canGroup = MapGroupManager.canCreateGroup(regions, selectedIds);
 
   const toggleDeleteMark = (id: string): void => {
     setMarkedForDelete((prev) => {
@@ -38,18 +72,66 @@ export function Sidebar({ onExport, isExporting }: Props) {
     });
   };
 
+  const handleSelectClick = (id: string, shiftKey: boolean): void => {
+    if (shiftKey && lastClickedIdRef.current) {
+      const range = idsBetween(visibleIds, lastClickedIdRef.current, id);
+      const region = regions.find((r) => r.id === id);
+      // Match the state the clicked checkbox would become (toggle of current).
+      const nextSelected = !(region?.selectedForPdf ?? false);
+      setSelectedForIds(range, nextSelected);
+      return;
+    }
+    toggleSelected(id);
+    lastClickedIdRef.current = id;
+  };
+
+  const handleDeleteMarkClick = (id: string, shiftKey: boolean): void => {
+    if (shiftKey && lastClickedIdRef.current) {
+      const range = idsBetween(visibleIds, lastClickedIdRef.current, id);
+      const nextMarked = !markedForDelete.has(id);
+      setMarkedForDelete((prev) => {
+        const next = new Set(prev);
+        for (const rid of range) {
+          if (nextMarked) next.add(rid);
+          else next.delete(rid);
+        }
+        return next;
+      });
+      return;
+    }
+    toggleDeleteMark(id);
+    lastClickedIdRef.current = id;
+  };
+
   const enterDeleteMode = (): void => {
     setDeleteMode(true);
     setMarkedForDelete(new Set());
+    lastClickedIdRef.current = null;
   };
 
   const exitDeleteMode = (): void => {
     setDeleteMode(false);
     setMarkedForDelete(new Set());
+    lastClickedIdRef.current = null;
   };
 
   const markAllFiltered = (): void => {
     setMarkedForDelete(new Set(filtered.map((r) => r.id)));
+  };
+
+  const markMembers = (ids: string[], marked: boolean): void => {
+    setMarkedForDelete((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (marked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const deleteRegion = (id: string, label: string): void => {
+    if (confirm(`Delete region "${label}"?`)) removeRegion(id);
   };
 
   const confirmBulkDelete = (): void => {
@@ -120,7 +202,21 @@ export function Sidebar({ onExport, isExporting }: Props) {
           <SmallBtn onClick={() => setAllSelected(false)} icon={<Square size={14} />}>
             None
           </SmallBtn>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <SmallBtn
+              onClick={() => groupSelectedRegions()}
+              icon={<FolderPlus size={14} />}
+              disabled={!canGroup}
+              title={
+                canGroup
+                  ? 'Group selected maps'
+                  : selectedCount < 2
+                    ? 'Select 2 or more maps to group'
+                    : 'Selected maps are already in the same group'
+              }
+            >
+              Group
+            </SmallBtn>
             <SmallBtn onClick={enterDeleteMode} icon={<Trash2 size={14} />}>
               Multi-delete
             </SmallBtn>
@@ -132,20 +228,41 @@ export function Sidebar({ onExport, isExporting }: Props) {
         {filtered.length === 0 ? (
           <EmptyHint />
         ) : (
-          <ul className="divide-y divide-gray-100">
-            {filtered.map((r) => (
-              <RegionListItem
-                key={r.id}
-                region={r}
+          <div>
+            {grouped.map(({ group, members }) => (
+              <RegionGroupSection
+                key={group.id}
+                group={group}
+                members={members}
                 deleteMode={deleteMode}
-                markedForDelete={markedForDelete.has(r.id)}
-                onToggleDeleteMark={() => toggleDeleteMark(r.id)}
-                onDelete={() => {
-                  if (confirm(`Delete region "${r.addressShort ?? r.address}"?`)) removeRegion(r.id);
-                }}
+                markedForDelete={markedForDelete}
+                onSelectClick={handleSelectClick}
+                onToggleDeleteMark={handleDeleteMarkClick}
+                onMarkMembers={markMembers}
+                onDeleteRegion={(r) => deleteRegion(r.id, r.addressShort ?? r.address)}
               />
             ))}
-          </ul>
+            {ungrouped.length > 0 && (
+              <ul className="divide-y divide-gray-100">
+                {grouped.length > 0 && (
+                  <li className="bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    Ungrouped
+                  </li>
+                )}
+                {ungrouped.map((r) => (
+                  <RegionListItem
+                    key={r.id}
+                    region={r}
+                    deleteMode={deleteMode}
+                    markedForDelete={markedForDelete.has(r.id)}
+                    onSelectClick={handleSelectClick}
+                    onToggleDeleteMark={(shiftKey) => handleDeleteMarkClick(r.id, shiftKey)}
+                    onDelete={() => deleteRegion(r.id, r.addressShort ?? r.address)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </div>
 
@@ -211,16 +328,22 @@ function SmallBtn({
   onClick,
   icon,
   children,
+  disabled = false,
+  title,
 }: {
   onClick: () => void;
   icon: React.ReactNode;
   children: React.ReactNode;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted transition-colors hover:bg-gray-100 hover:text-ink"
+      disabled={disabled}
+      title={title}
+      className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted transition-colors hover:bg-gray-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
     >
       {icon}
       {children}
