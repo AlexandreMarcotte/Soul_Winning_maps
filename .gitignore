@@ -4,3 +4,9 @@ dist/
 *.log
 .DS_Store
 .vite/
+
+# Local user data — kept on the Desktop, never commit maps/PDFs
+Json_maps_save/
+PDF_Soulwinning_Maps/
+*.canvass.json
+*.pdf

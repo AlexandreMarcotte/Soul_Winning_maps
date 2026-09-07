@@ -12,9 +12,27 @@ async function atomicWrite(path: string, data: string | Uint8Array): Promise<voi
   await fs.rename(tmp, path);
 }
 
-const DEFAULT_PROJECT_PATH = 'Json_maps_save/Soulwinning.canvass.json';
-/** Default folder for the PDF save dialog, relative to the app (project) root. */
-const DEFAULT_PDF_EXPORT_DIR = 'PDF_Soulwinning_Maps';
+/** User data lives on the Desktop so project JSON / PDFs stay out of the git repo. */
+const PROJECT_DIR_NAME = 'Json_maps_save';
+const PDF_DIR_NAME = 'PDF_Soulwinning_Maps';
+const DEFAULT_PROJECT_FILE = 'Soulwinning.canvass.json';
+
+function defaultProjectDir(): string {
+  return join(app.getPath('desktop'), PROJECT_DIR_NAME);
+}
+
+function defaultProjectPath(): string {
+  return join(defaultProjectDir(), DEFAULT_PROJECT_FILE);
+}
+
+function defaultPdfExportDir(): string {
+  return join(app.getPath('desktop'), PDF_DIR_NAME);
+}
+
+async function ensureDir(dir: string): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+}
+
 /** File in userData that remembers user paths between launches. */
 const RECENT_FILE_NAME = 'recent.json';
 
@@ -89,10 +107,11 @@ export function registerIpcHandlers(): void {
         const json = await fs.readFile(remembered, 'utf-8');
         return { path: remembered, json };
       } catch {
-        /* fall through to bundled default if the remembered file is gone */
+        /* fall through to Desktop default if the remembered file is gone */
       }
     }
-    const filePath = join(app.getAppPath(), DEFAULT_PROJECT_PATH);
+    await ensureDir(defaultProjectDir());
+    const filePath = defaultProjectPath();
     try {
       const json = await fs.readFile(filePath, 'utf-8');
       return { path: filePath, json };
@@ -103,8 +122,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('project:open', async () => {
     const win = BrowserWindow.getFocusedWindow() ?? undefined;
+    await ensureDir(defaultProjectDir());
     const result = await dialog.showOpenDialog(win!, {
       title: 'Open canvass project',
+      defaultPath: defaultProjectDir(),
       properties: ['openFile'],
       filters: PROJECT_FILTER,
     });
@@ -118,14 +139,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('project:save', async (_evt, json: string, path: string | null) => {
     if (!path) {
       const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      await ensureDir(defaultProjectDir());
       const result = await dialog.showSaveDialog(win!, {
         title: 'Save canvass project',
-        defaultPath: 'Soulwinning-26-05-02.canvass.json',
+        defaultPath: join(defaultProjectDir(), 'Soulwinning-26-05-02.canvass.json'),
         filters: PROJECT_FILTER,
       });
       if (result.canceled || !result.filePath) return null;
       path = result.filePath;
     }
+    await ensureDir(dirname(path));
     await atomicWrite(path, json);
     await writeRecentProjectPath(path);
     return path;
@@ -133,12 +156,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('project:saveAs', async (_evt, json: string, suggestedName: string) => {
     const win = BrowserWindow.getFocusedWindow() ?? undefined;
+    await ensureDir(defaultProjectDir());
     const result = await dialog.showSaveDialog(win!, {
       title: 'Save canvass project as',
-      defaultPath: suggestedName,
+      defaultPath: join(defaultProjectDir(), suggestedName),
       filters: PROJECT_FILTER,
     });
     if (result.canceled || !result.filePath) return null;
+    await ensureDir(dirname(result.filePath));
     await atomicWrite(result.filePath, json);
     await writeRecentProjectPath(result.filePath);
     return result.filePath;
@@ -150,6 +175,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('project:autosave', async (_evt, json: string, path: string | null) => {
     const savePath = path ?? join(app.getPath('userData'), 'autosave.canvass.json');
+    await ensureDir(dirname(savePath));
     await atomicWrite(savePath, json);
     const today = new Date().toISOString().slice(0, 10);
     const base = basename(savePath).replace(/\.canvass\.json$/, '');
@@ -167,7 +193,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('pdf:export', async (_evt, bytes: Uint8Array, defaultName: string) => {
     const win = BrowserWindow.getFocusedWindow() ?? undefined;
     const rememberedDir = await readRecentPdfExportDir();
-    const baseDir = rememberedDir ?? join(app.getAppPath(), DEFAULT_PDF_EXPORT_DIR);
+    const baseDir = rememberedDir ?? defaultPdfExportDir();
+    await ensureDir(baseDir);
     const result = await dialog.showSaveDialog(win!, {
       title: 'Export PDF',
       defaultPath: join(baseDir, defaultName),
