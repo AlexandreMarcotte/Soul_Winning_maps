@@ -1,6 +1,6 @@
 import type { LatLng } from '@/types/region';
 
-export type MapCityId = 'winnipeg' | 'calgary' | 'vancouver';
+export type MapCityId = 'winnipeg' | 'calgary' | 'surrey';
 
 export interface MapCity {
   id: MapCityId;
@@ -35,13 +35,13 @@ export const MAP_CITIES: readonly MapCity[] = [
     namePattern: /calgary/i,
   },
   {
-    id: 'vancouver',
-    label: 'Vancouver BC',
-    center: { lat: 49.2827, lng: -123.1207 },
+    id: 'surrey',
+    label: 'Surrey BC',
+    center: { lat: 49.1913, lng: -122.8490 },
     zoom: 12,
-    viewbox: '-123.35,49.40,-122.95,49.15',
-    searchSuffix: 'Vancouver, BC',
-    namePattern: /vancouver/i,
+    viewbox: '-122.95,49.25,-122.65,49.00',
+    searchSuffix: 'Surrey, BC',
+    namePattern: /surrey/i,
   },
 ] as const;
 

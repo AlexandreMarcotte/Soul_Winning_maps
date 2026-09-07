@@ -14,3 +14,5 @@ linux:
 win:
   target:
     - portable
+  # Avoid winCodeSign symlink extraction (needs Developer Mode / admin on Windows).
+  signAndEditExecutable: false
